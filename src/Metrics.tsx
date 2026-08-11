@@ -73,7 +73,7 @@ export default function Metrics() {
         <div className="aurora" aria-hidden />
         <div className="gate">
           <div className="logo">
-            <span className="logo-mark">◆</span> Morph
+            <span className="logo-mark">◆</span> File Converter
           </div>
           <h2>Metrics</h2>
           <p className="gate-sub">Enter the password to view traffic.</p>
@@ -140,7 +140,7 @@ function Dashboard({
       <div className="aurora" aria-hidden />
       <header className="hero metrics-hero">
         <div className="logo">
-          <span className="logo-mark">◆</span> Morph
+          <span className="logo-mark">◆</span> File Converter
         </div>
         <h1>
           <span className="grad">Metrics</span>

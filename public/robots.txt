@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /metrics
+
+Sitemap: https://www.fileconverter.studio/sitemap.xml

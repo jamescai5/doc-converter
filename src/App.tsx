@@ -190,13 +190,14 @@ export default function App() {
       <div className="aurora" aria-hidden />
       <header className="hero">
         <div className="logo">
-          <span className="logo-mark">◆</span> Morph
+          <span className="logo-mark">◆</span> File Converter
         </div>
         <h1>
-          Convert images &amp; PDFs to <span className="grad">anything</span>.
+          Free Image &amp; PDF <span className="grad">Converter</span>
         </h1>
         <p className="tagline">
-          Drop up to {MAX_FILES} files, pick a target format, and download.
+          Convert PNG, JPG, WebP, and PDF files online. Drop up to {MAX_FILES} files, pick a target
+          format, and download.
         </p>
       </header>
 
