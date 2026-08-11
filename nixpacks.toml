@@ -1,0 +1,10 @@
+# Railway / Nixpacks build configuration.
+# The app is a static Vite build served by `serve` on the port Railway injects.
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.build]
+cmds = ["npm ci", "npm run build"]
+
+[start]
+cmd = "npm run start"
