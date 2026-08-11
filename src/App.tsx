@@ -8,6 +8,7 @@ import {
   targetsFor,
 } from "./lib/formats";
 import { convert, zipFiles } from "./lib/convert";
+import { track } from "./lib/analytics";
 
 const MAX_FILES = 10;
 
@@ -58,6 +59,7 @@ export default function App() {
       setItems((prev) => {
         const room = MAX_FILES - prev.length;
         const accepted = incoming.slice(0, Math.max(0, room));
+        if (accepted.length > 0) track("upload", accepted.length);
         const newItems: Item[] = accepted.map((file) => ({
           id: crypto.randomUUID(),
           file,
@@ -130,6 +132,7 @@ export default function App() {
     try {
       const { blob, ext } = await convert(item.file, item.source, item.target as FormatId);
       const name = outputName(item.file.name, ext);
+      track("conversion", 1);
       setItems((cur) =>
         cur.map((it) => (it.id === item.id ? { ...it, status: "done", result: { blob, name } } : it)),
       );
@@ -163,6 +166,7 @@ export default function App() {
   const downloadAll = useCallback(async () => {
     const done = items.filter((it) => it.status === "done" && it.result);
     if (done.length === 0) return;
+    track("download", done.length);
     if (done.length === 1) {
       downloadBlob(done[0].result!.blob, done[0].result!.name);
       return;
@@ -259,7 +263,11 @@ export default function App() {
                   item={item}
                   onTarget={setTarget}
                   onConvert={runConvert}
-                  onDownload={() => item.result && downloadBlob(item.result.blob, item.result.name)}
+                  onDownload={() => {
+                    if (!item.result) return;
+                    track("download", 1);
+                    downloadBlob(item.result.blob, item.result.name);
+                  }}
                   onRemove={removeItem}
                 />
               ))}

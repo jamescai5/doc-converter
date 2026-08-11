@@ -7,3 +7,5 @@ dist-ssr
 build.log
 npm-debug.log*
 *.tsbuildinfo
+data
+
