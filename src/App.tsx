@@ -63,7 +63,11 @@ export default function App() {
         const newItems: Item[] = accepted.map((file) => ({
           id: crypto.randomUUID(),
           file,
-          previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : undefined,
+          // HEIC/HEIF can't be shown in an <img>, so skip the preview for them.
+          previewUrl:
+            file.type.startsWith("image/") && file.type !== "image/heic" && file.type !== "image/heif"
+              ? URL.createObjectURL(file)
+              : undefined,
           detecting: true,
           source: "unknown",
           sourceLabel: "Detecting…",
@@ -196,8 +200,8 @@ export default function App() {
           Free Image &amp; PDF <span className="grad">Converter</span>
         </h1>
         <p className="tagline">
-          Convert PNG, JPG, WebP, and PDF files online. Drop up to {MAX_FILES} files, pick a target
-          format, and download.
+          Convert PNG, JPG, WebP, HEIC, AVIF, GIF, BMP, SVG, and PDF files online. Drop up to{" "}
+          {MAX_FILES} files, pick a target format, and download.
         </p>
       </header>
 
@@ -298,7 +302,9 @@ function FileRow({ item, onTarget, onConvert, onDownload, onRemove }: RowProps) 
         {item.previewUrl ? (
           <img src={item.previewUrl} alt="" />
         ) : (
-          <span className="thumb-glyph">{item.source === "pdf" ? "PDF" : "?"}</span>
+          <span className="thumb-glyph">
+            {item.source === "pdf" ? "PDF" : item.source === "heic" ? "HEIC" : "?"}
+          </span>
         )}
       </div>
 

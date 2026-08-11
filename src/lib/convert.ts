@@ -21,6 +21,15 @@ const JPEG_QUALITY = 0.92;
 const PDF_RENDER_SCALE = 2;
 
 export async function convert(file: File, source: SourceKind, target: FormatId): Promise<ConvertResult> {
+  if (source === "heic") {
+    // Browsers can't decode HEIC/HEIF, so transcode to PNG first, then treat
+    // the result like any other image. heic2any is imported lazily to keep the
+    // ~1.5 MB decoder out of the initial page load.
+    const { default: heic2any } = await import("heic2any");
+    const decoded = await heic2any({ blob: file, toType: "image/png" });
+    const png = Array.isArray(decoded) ? decoded[0] : decoded;
+    return target === "pdf" ? imageToPdf(png) : imageToImage(png, target);
+  }
   if (source === "image") {
     return target === "pdf" ? imageToPdf(file) : imageToImage(file, target);
   }
@@ -32,7 +41,7 @@ export async function convert(file: File, source: SourceKind, target: FormatId):
 
 // ---------- helpers ----------
 
-function loadImage(file: File): Promise<HTMLImageElement> {
+function loadImage(file: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
@@ -46,6 +55,17 @@ function loadImage(file: File): Promise<HTMLImageElement> {
     };
     img.src = url;
   });
+}
+
+/**
+ * Natural pixel size of a decoded image. Vector SVGs may report 0 when they
+ * carry no intrinsic width/height, so fall back to a sensible raster size.
+ */
+function imageSize(img: HTMLImageElement): { width: number; height: number } {
+  return {
+    width: img.naturalWidth || 1024,
+    height: img.naturalHeight || 1024,
+  };
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality?: number): Promise<Blob> {
@@ -75,21 +95,21 @@ function drawToCanvas(source: CanvasImageSource, width: number, height: number, 
 
 // ---------- image -> image ----------
 
-async function imageToImage(file: File, target: FormatId): Promise<ConvertResult> {
+async function imageToImage(file: Blob, target: FormatId): Promise<ConvertResult> {
   const img = await loadImage(file);
   const format = FORMATS[target];
   const opaque = target === "jpeg";
-  const canvas = drawToCanvas(img, img.naturalWidth, img.naturalHeight, opaque);
+  const { width, height } = imageSize(img);
+  const canvas = drawToCanvas(img, width, height, opaque);
   const blob = await canvasToBlob(canvas, format.mime, target === "png" ? undefined : JPEG_QUALITY);
   return { blob, ext: format.ext };
 }
 
 // ---------- image -> pdf ----------
 
-async function imageToPdf(file: File): Promise<ConvertResult> {
+async function imageToPdf(file: Blob): Promise<ConvertResult> {
   const img = await loadImage(file);
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
+  const { width: w, height: h } = imageSize(img);
 
   // jsPDF embeds PNG/JPEG cleanly; normalize everything to PNG via canvas first.
   const canvas = drawToCanvas(img, w, h, false);
