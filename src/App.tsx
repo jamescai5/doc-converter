@@ -10,7 +10,7 @@ import {
 import { convert, zipFiles } from "./lib/convert";
 import { track } from "./lib/analytics";
 
-const MAX_FILES = 10;
+const MAX_FILES = 20;
 
 type Status = "idle" | "converting" | "done" | "error";
 
@@ -196,8 +196,7 @@ export default function App() {
           Convert images &amp; PDFs to <span className="grad">anything</span>.
         </h1>
         <p className="tagline">
-          Drop up to {MAX_FILES} files, pick a target format, and download. Everything runs right in your
-          browser — no upload, no login, completely private.
+          Drop up to {MAX_FILES} files, pick a target format, and download.
         </p>
       </header>
 
@@ -275,10 +274,6 @@ export default function App() {
           </section>
         )}
       </main>
-
-      <footer className="foot">
-        Built with React · files never leave your device · <span className="grad">Morph</span>
-      </footer>
     </div>
   );
 }
