@@ -243,6 +243,7 @@ body {
 }
 
 .row {
+  position: relative;
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr) auto auto;
   align-items: center;
@@ -252,6 +253,37 @@ body {
   background: var(--surface);
   border: 1px solid transparent;
   transition: background 0.2s, border-color 0.2s;
+}
+
+/* Indeterminate progress bar shown along the bottom edge while converting. */
+.row-progress {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(124, 92, 255, 0.16);
+}
+
+.row-progress-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 40%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #7c5cff 35%, #22d3ee 65%, transparent);
+  animation: indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes indeterminate {
+  0% {
+    left: -42%;
+  }
+  100% {
+    left: 100%;
+  }
 }
 
 .row:hover {

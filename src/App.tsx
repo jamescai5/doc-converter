@@ -361,6 +361,12 @@ function FileRow({ item, onTarget, onConvert, onDownload, onRemove }: RowProps) 
           ✕
         </button>
       </div>
+
+      {item.status === "converting" && (
+        <div className="row-progress" aria-hidden>
+          <div className="row-progress-bar" />
+        </div>
+      )}
     </li>
   );
 }

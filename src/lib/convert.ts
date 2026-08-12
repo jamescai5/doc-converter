@@ -1,6 +1,7 @@
 // All conversion happens 100% client-side. Images are re-encoded through a
 // <canvas>; PDFs are rasterized with pdf.js; images are wrapped into PDFs with
-// jsPDF. Multi-page PDF -> image conversions are bundled into a .zip.
+// jsPDF. HEIC/HEIF is decoded in a Web Worker (libheif WASM) so it never blocks
+// the UI. Multi-page PDF -> image conversions are bundled into a .zip.
 
 import { jsPDF } from "jspdf";
 import * as pdfjsLib from "pdfjs-dist";
@@ -20,26 +21,31 @@ const JPEG_QUALITY = 0.92;
 /** Render PDF pages at 2x for crisp raster output. */
 const PDF_RENDER_SCALE = 2;
 
+/** A decoded source ready to be drawn to a canvas, with its pixel dimensions. */
+interface Decoded {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+}
+
 export async function convert(file: File, source: SourceKind, target: FormatId): Promise<ConvertResult> {
-  if (source === "heic") {
-    // Browsers can't decode HEIC/HEIF, so transcode to PNG first, then treat
-    // the result like any other image. heic2any is imported lazily to keep the
-    // ~1.5 MB decoder out of the initial page load.
-    const { default: heic2any } = await import("heic2any");
-    const decoded = await heic2any({ blob: file, toType: "image/png" });
-    const png = Array.isArray(decoded) ? decoded[0] : decoded;
-    return target === "pdf" ? imageToPdf(png) : imageToImage(png, target);
-  }
-  if (source === "image") {
-    return target === "pdf" ? imageToPdf(file) : imageToImage(file, target);
-  }
   if (source === "pdf") {
     return pdfToImages(file, target);
   }
-  throw new Error("Unsupported file type");
+
+  let decoded: Decoded;
+  if (source === "heic") {
+    decoded = await decodeHeic(file);
+  } else if (source === "image") {
+    decoded = await loadDecoded(file);
+  } else {
+    throw new Error("Unsupported file type");
+  }
+
+  return target === "pdf" ? finishPdf(decoded) : finishImage(decoded, target);
 }
 
-// ---------- helpers ----------
+// ---------- image loading / decoding ----------
 
 function loadImage(file: Blob): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -57,16 +63,52 @@ function loadImage(file: Blob): Promise<HTMLImageElement> {
   });
 }
 
-/**
- * Natural pixel size of a decoded image. Vector SVGs may report 0 when they
- * carry no intrinsic width/height, so fall back to a sensible raster size.
- */
-function imageSize(img: HTMLImageElement): { width: number; height: number } {
-  return {
-    width: img.naturalWidth || 1024,
-    height: img.naturalHeight || 1024,
-  };
+/** Decode a browser-native image. Vector SVGs may report 0x0, so fall back. */
+async function loadDecoded(file: Blob): Promise<Decoded> {
+  const img = await loadImage(file);
+  return { source: img, width: img.naturalWidth || 1024, height: img.naturalHeight || 1024 };
 }
+
+// ---------- HEIC decoding (Web Worker + libheif WASM) ----------
+
+let heicWorker: Worker | null = null;
+let heicReqId = 0;
+const heicPending = new Map<number, { resolve: (b: ImageBitmap) => void; reject: (e: Error) => void }>();
+
+function getHeicWorker(): Worker {
+  if (!heicWorker) {
+    heicWorker = new Worker(new URL("./heic.worker.ts", import.meta.url), { type: "module" });
+    heicWorker.onmessage = (e: MessageEvent) => {
+      const { id, bitmap, error } = e.data as { id: number; bitmap?: ImageBitmap; error?: string };
+      const pending = heicPending.get(id);
+      if (!pending) return;
+      heicPending.delete(id);
+      if (error) pending.reject(new Error(error));
+      else pending.resolve(bitmap!);
+    };
+    heicWorker.onerror = (e) => {
+      // If the worker crashes, fail every in-flight request rather than hang.
+      const err = new Error(e.message || "HEIC worker crashed");
+      heicPending.forEach((p) => p.reject(err));
+      heicPending.clear();
+    };
+  }
+  return heicWorker;
+}
+
+async function decodeHeic(file: Blob): Promise<Decoded> {
+  const buffer = await file.arrayBuffer();
+  const worker = getHeicWorker();
+  const id = ++heicReqId;
+  const bitmap = await new Promise<ImageBitmap>((resolve, reject) => {
+    heicPending.set(id, { resolve, reject });
+    // Transfer the buffer so we don't copy the (potentially large) HEIC bytes.
+    worker.postMessage({ id, buffer }, [buffer]);
+  });
+  return { source: bitmap, width: bitmap.width, height: bitmap.height };
+}
+
+// ---------- canvas helpers ----------
 
 function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -78,7 +120,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, mime: string, quality?: number)
   });
 }
 
-/** Draw an image onto a fresh canvas, painting a white backdrop for opaque formats. */
+/** Draw a decoded source onto a fresh canvas, painting white for opaque formats. */
 function drawToCanvas(source: CanvasImageSource, width: number, height: number, opaque: boolean): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -93,35 +135,27 @@ function drawToCanvas(source: CanvasImageSource, width: number, height: number, 
   return canvas;
 }
 
-// ---------- image -> image ----------
+// ---------- finish: decoded -> image / pdf ----------
 
-async function imageToImage(file: Blob, target: FormatId): Promise<ConvertResult> {
-  const img = await loadImage(file);
+async function finishImage(d: Decoded, target: FormatId): Promise<ConvertResult> {
   const format = FORMATS[target];
   const opaque = target === "jpeg";
-  const { width, height } = imageSize(img);
-  const canvas = drawToCanvas(img, width, height, opaque);
+  const canvas = drawToCanvas(d.source, d.width, d.height, opaque);
   const blob = await canvasToBlob(canvas, format.mime, target === "png" ? undefined : JPEG_QUALITY);
   return { blob, ext: format.ext };
 }
 
-// ---------- image -> pdf ----------
-
-async function imageToPdf(file: Blob): Promise<ConvertResult> {
-  const img = await loadImage(file);
-  const { width: w, height: h } = imageSize(img);
-
+function finishPdf(d: Decoded): ConvertResult {
   // jsPDF embeds PNG/JPEG cleanly; normalize everything to PNG via canvas first.
-  const canvas = drawToCanvas(img, w, h, false);
+  const canvas = drawToCanvas(d.source, d.width, d.height, false);
   const dataUrl = canvas.toDataURL("image/png");
-
   const pdf = new jsPDF({
-    orientation: w >= h ? "landscape" : "portrait",
+    orientation: d.width >= d.height ? "landscape" : "portrait",
     unit: "px",
-    format: [w, h],
+    format: [d.width, d.height],
     hotfixes: ["px_scaling"],
   });
-  pdf.addImage(dataUrl, "PNG", 0, 0, w, h);
+  pdf.addImage(dataUrl, "PNG", 0, 0, d.width, d.height);
   return { blob: pdf.output("blob"), ext: "pdf" };
 }
 
